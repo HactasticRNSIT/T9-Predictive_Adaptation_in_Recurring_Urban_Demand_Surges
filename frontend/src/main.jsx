@@ -192,6 +192,21 @@ function buildCityModel(selectedCity, selectedEvent, crowdSize, eventPulse, weat
     const eventLocalBoost = type.includes('metro') && selectedEvent === 'Metro Delay' ? 12 : type.includes('rain') && selectedEvent === 'Heavy Rain' ? 14 : type.includes('rally') && selectedEvent === 'Political Rally' ? 12 : index < 2 ? 8 : 3
     const intensity = Math.min(99, Math.round(zone.base + active + eventLocalBoost + officeBoost + nightlifeBoost + waterloggingBoost + heatImpact))
     const anomalyReason = waterloggingBoost > 9 ? 'waterlogging and emergency delay risk' : transportBoost > 0 ? 'transport density and bottleneck pressure' : nightlifeBoost > 0 ? 'late-night crowd clustering' : officeBoost > 0 ? 'office rush-hour demand' : 'synthetic baseline demand variance'
+    const explanationDrivers = [
+      waterloggingBoost > 6 ? `${weather.label} rainfall` : '',
+      officeBoost > 0 ? 'office commute overlap' : '',
+      nightlifeBoost > 0 ? 'late-night/weekend activity' : '',
+      active > 0 ? `${selectedEvent} crowd movement` : '',
+      transportBoost > 0 ? 'transport corridor density' : '',
+    ].filter(Boolean)
+    const explanation = `Predicted due to ${explanationDrivers.length ? explanationDrivers.join(' + ') : `${zone.type} baseline demand`}.`
+    const recommendations = [
+      intensity > 88 || transportBoost > 0 ? 'deploy buses' : '',
+      transportBoost > 0 || active > 18 ? 'reroute traffic' : '',
+      waterloggingBoost > 8 || intensity > 92 ? 'increase emergency response' : '',
+      active > 0 || officeBoost > 0 ? 'activate alternate corridors' : '',
+    ].filter(Boolean)
+    const confidence = Math.min(97, Math.round(76 + intensity * 0.14 + explanationDrivers.length * 3 + (weather.severity === 'high' || weather.severity === 'critical' ? 4 : 0)))
     return {
       ...zone,
       intensity,
@@ -201,6 +216,9 @@ function buildCityModel(selectedCity, selectedEvent, crowdSize, eventPulse, weat
       traffic: Math.round(900 + intensity * 18 + crowdSize / 180 + rainImpact * 19 + transportBoost * 12),
       utility: Math.round(420 + intensity * 8 + crowdSize / 420 + heatImpact * 18),
       anomalyReason,
+      explanation,
+      recommendations: recommendations.length ? recommendations : ['monitor live sensors'],
+      confidence,
     }
   })
   return {
@@ -216,14 +234,17 @@ function Dashboard({ dashboard, selectedZone, setSelectedZone, apiError, selecte
   const model = buildCityModel(selectedCity, selectedEvent, crowdSize, eventPulse, weather, cityCenter)
   const focusedZone = model.zones.find(z => z.id === selectedZone) || model.zones[0]
   const predictionCards = [focusedZone, ...model.zones.filter(z => z.id !== focusedZone.id).slice(0, 2)]
+  const recommendationQueue = [...new Set(model.activity.flatMap(z => z.recommendations))].slice(0, 4)
   const criticalCount = model.zones.filter(z => z.severity === 'Critical' || z.severity === 'High').length
   return <div className="grid h-[calc(100vh-130px)] grid-cols-12 gap-5 overflow-y-auto pr-1">
     <Card className="col-span-8 row-span-2 overflow-hidden p-0"><CityMap heatmap={model.heatmap} focusZone={focusedZone} center={model.city.center} /></Card>
     <div className="col-span-4 grid grid-cols-2 gap-4"><Stat label="Rainfall" value={`${weather.rainfall}mm`} icon={<Map/>}/><Stat label="Surge Risk" value={criticalCount} icon={<Zap/>}/><Stat label="Temp" value={`${weather.temperature}°C`} icon={<AlertTriangle/>}/><Stat label="Efficiency" value={`${Math.max(61, 93 - criticalCount * 4)}%`} icon={<Activity/>}/></div>
-    <Card className="col-span-4 overflow-hidden"><div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-xl font-bold">Live Prediction Cards</h3><ZoneSelect zones={model.zones} value={selectedZone} onChange={setSelectedZone}/></div>{predictionCards.map(item => <div key={item.id} className="mb-3 rounded-2xl bg-slate-900/70 p-3"><div className="flex justify-between"><b>{item.name}</b><span className={item.severity === 'Critical' ? 'text-red-300' : 'text-cyan-300'}>{item.intensity}%</span></div><p className="text-xs text-slate-400">{item.surge} · Traffic {item.traffic} · Utility {item.utility}</p></div>)}</Card>
+    <Card className="col-span-4 overflow-hidden"><div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-xl font-bold">Live Prediction Cards</h3><ZoneSelect zones={model.zones} value={selectedZone} onChange={setSelectedZone}/></div>{predictionCards.map(item => <div key={item.id} className="mb-3 rounded-2xl bg-slate-900/70 p-3"><div className="flex justify-between"><b>{item.name}</b><span className={item.severity === 'Critical' ? 'text-red-300' : 'text-cyan-300'}>{item.intensity}%</span></div><p className="text-xs text-slate-400">{item.surge} · Traffic {item.traffic} · Utility {item.utility}</p><p className="mt-2 text-xs text-lime-200">Prediction Confidence: {item.confidence}%</p></div>)}</Card>
     <Card className="col-span-4"><h3 className="mb-4 text-xl font-bold">Event Intelligence Engine</h3><div className="grid gap-3"><select value={selectedCity} onChange={(e) => { setSelectedCity(e.target.value); setSelectedZone(1) }} className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white">{Object.keys(CITY_INTELLIGENCE).map(city => <option key={city}>{city}</option>)}</select><div className="rounded-xl bg-slate-950/70 p-3 text-sm text-slate-300">Weather: <b className="text-cyan-200">{weather.label}</b> · {weather.severity} severity</div><select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white">{EVENTS.map(event => <option key={event}>{event}</option>)}</select><label className="text-sm text-slate-300">Crowd size: {Number(crowdSize).toLocaleString()}</label><input type="range" min="5000" max="120000" step="1000" value={crowdSize} onChange={(e) => setCrowdSize(Number(e.target.value))} /><button onClick={() => setEventPulse({ city: selectedCity, event: selectedEvent, crowdSize, at: Date.now() })} className="rounded-xl bg-cyan-400 px-4 py-3 font-black text-slate-950 shadow-glow">Simulate Event</button></div></Card>
     <Card className="col-span-8"><div className="mb-4 flex items-center justify-between"><h3 className="text-xl font-bold">Animated Activity Feed</h3><span className="text-sm text-cyan-200">Focus: {selectedCity}</span></div><div className="grid grid-cols-2 gap-3">{model.activity.map(a => <div key={a.id} className="animate-pulse rounded-2xl border border-red-400/20 bg-red-500/10 p-3"><div className="flex justify-between gap-3"><b>{a.name}</b><span className="text-xs text-slate-400">{a.timestamp}</span></div><p className="text-sm text-slate-300">{a.surge} — <span className={a.severity === 'Critical' ? 'text-red-300' : 'text-amber-200'}>{a.severity}</span></p></div>)}</div></Card>
-    <Card className="col-span-12"><h3 className="mb-4 text-xl font-bold">Dynamic Anomaly Cards</h3><div className="grid grid-cols-3 gap-3">{model.activity.slice(0, 6).map(a => <div key={a.name} className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"><p className="text-xs uppercase text-red-300">{a.severity}</p><h4 className="text-lg font-bold">{a.name}</h4><p className="text-sm text-slate-400">{a.surge} detected at {a.timestamp}</p><p className="mt-2 text-xs text-cyan-200">{a.anomalyReason}</p></div>)}</div></Card>
+    <Card className="col-span-6"><h3 className="mb-4 text-xl font-bold">AI Explanation Cards</h3><div className="grid gap-3">{predictionCards.map(item => <div key={item.name} className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4"><div className="flex justify-between"><b>{item.name}</b><span className="text-lime-200">{item.confidence}% confidence</span></div><p className="mt-2 text-sm text-slate-300">{item.explanation}</p></div>)}</div></Card>
+    <Card className="col-span-6"><h3 className="mb-4 text-xl font-bold">Adaptive Recommendation Engine</h3><div className="grid grid-cols-2 gap-3">{recommendationQueue.map(action => <div key={action} className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4"><p className="text-sm uppercase tracking-[.2em] text-lime-200">Recommended Action</p><h4 className="mt-2 text-lg font-black capitalize">{action}</h4><p className="mt-1 text-xs text-slate-400">Triggered by {focusedZone.name} risk, {selectedEvent}, and live weather context.</p></div>)}</div></Card>
+    <Card className="col-span-12"><h3 className="mb-4 text-xl font-bold">Dynamic Anomaly Cards</h3><div className="grid grid-cols-3 gap-3">{model.activity.slice(0, 6).map(a => <div key={a.name} className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"><p className="text-xs uppercase text-red-300">{a.severity}</p><h4 className="text-lg font-bold">{a.name}</h4><p className="text-sm text-slate-400">{a.surge} detected at {a.timestamp}</p><p className="mt-2 text-xs text-cyan-200">{a.anomalyReason}</p><p className="mt-2 text-xs text-lime-200">Confidence: {a.confidence}%</p><p className="mt-2 text-xs text-slate-300">{a.explanation}</p></div>)}</div></Card>
   </div>
 }
 
