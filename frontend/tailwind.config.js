@@ -1,0 +1,1 @@
+export default { content: ['./index.html', './src/**/*.{js,jsx}'], theme: { extend: { colors: { city: { bg: '#050816', panel: 'rgba(15, 23, 42, 0.72)', cyan: '#22d3ee', violet: '#8b5cf6', lime: '#a3e635' } }, boxShadow: { glow: '0 0 40px rgba(34, 211, 238, 0.22)' } } }, plugins: [] }
