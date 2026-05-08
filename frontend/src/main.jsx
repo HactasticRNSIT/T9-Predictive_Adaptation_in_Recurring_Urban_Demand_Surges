@@ -157,9 +157,43 @@ function App() {
 
 const icons = { Dashboard: <Map size={18}/>, Forecast: <BarChart3 size={18}/>, Anomalies: <AlertTriangle size={18}/>, Simulation: <SlidersHorizontal size={18}/>, Analytics: <Shield size={18}/> }
 
-function Card({ children, className = '' }) { return <div className={`rounded-3xl border border-white/10 bg-white/[.07] p-5 shadow-glow backdrop-blur-xl ${className}`}>{children}</div> }
+function Card({ children, className = '' }) { return <div className={`command-card rounded-3xl border border-white/10 bg-white/[.07] p-5 shadow-glow backdrop-blur-xl ${className}`}>{children}</div> }
 function Stat({ label, value, icon }) { return <Card><div className="flex items-center justify-between"><div><p className="text-sm text-slate-400">{label}</p><h3 className="mt-2 text-3xl font-black">{value}</h3></div><div className="text-cyan-300">{icon}</div></div></Card> }
 function ZoneSelect({ zones, value, onChange }) { return <select value={value} onChange={(e) => onChange(Number(e.target.value))} className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white">{zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}</select> }
+function TrafficVideoPanel({ zone }) {
+  const [pulse, setPulse] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setPulse(value => value + 1), 1800)
+    return () => clearInterval(timer)
+  }, [])
+  const congestion = Math.min(98, Math.max(22, Math.round(zone.intensity + Math.sin(pulse * 0.9) * 4)))
+  const density = Math.min(99, Math.max(25, Math.round(zone.intensity * 0.86 + 9 + Math.cos(pulse * 0.7) * 5)))
+  const response = Math.max(41, Math.min(96, Math.round(98 - zone.intensity * 0.48 + Math.sin(pulse * 0.6) * 3)))
+  const sparkline = Array.from({ length: 14 }, (_, index) => Math.max(18, Math.min(92, Math.round(congestion + Math.sin((pulse + index) * 0.72) * 14 - index * 0.6))))
+  const points = sparkline.map((value, index) => `${index * 7},${42 - value * 0.34}`).join(' ')
+  return <Card className="col-span-4 overflow-hidden p-0">
+    <div className="relative h-full min-h-[230px] overflow-hidden rounded-3xl bg-slate-950">
+      <video className="absolute inset-0 h-full w-full object-cover opacity-60 saturate-150" src="/traffic-monitor-demo.mp4" muted autoPlay loop playsInline />
+      <div className="ai-scanline absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,.16),rgba(2,6,23,.86)),repeating-linear-gradient(0deg,rgba(34,211,238,.10)_0px,rgba(34,211,238,.10)_1px,transparent_1px,transparent_7px)]" />
+      <div className="absolute left-4 top-4 rounded-full border border-red-300/40 bg-red-500/20 px-3 py-1 text-xs font-black text-red-200"><span className="live-dot">●</span> LIVE</div>
+      <div className="absolute right-4 top-4 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">AI TRAFFIC VISION</div>
+      <div className="absolute inset-x-4 bottom-4">
+        <p className="text-xs uppercase tracking-[.3em] text-cyan-200">Urban Congestion Monitor</p>
+        <h3 className="mt-1 text-xl font-black">{zone.name}</h3>
+        <p className="mt-1 text-xs text-lime-200">AI analyzing... predictive scan active</p>
+        <svg className="mt-2 h-10 w-full overflow-visible rounded-xl bg-slate-950/60 p-1" viewBox="0 0 92 44" preserveAspectRatio="none">
+          <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={points} fill="none" stroke="#a3e635" strokeWidth=".9" strokeOpacity=".55" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded-2xl bg-slate-950/70 p-2"><p className="text-slate-400">Congestion</p><b className={congestion > 82 ? 'text-red-300 pulse-warning' : 'text-cyan-200'}>{congestion}%</b></div>
+          <div className="rounded-2xl bg-slate-950/70 p-2"><p className="text-slate-400">Density</p><b className="text-amber-200">{density}%</b></div>
+          <div className="rounded-2xl bg-slate-950/70 p-2"><p className="text-slate-400">Response</p><b className="text-lime-200">{response}%</b></div>
+        </div>
+      </div>
+    </div>
+  </Card>
+}
 
 function buildCityModel(selectedCity, selectedEvent, crowdSize, eventPulse, weather, cityCenter) {
   const city = CITY_INTELLIGENCE[selectedCity]
@@ -241,6 +275,7 @@ function Dashboard({ dashboard, selectedZone, setSelectedZone, apiError, selecte
     <div className="col-span-4 grid grid-cols-2 gap-4"><Stat label="Rainfall" value={`${weather.rainfall}mm`} icon={<Map/>}/><Stat label="Surge Risk" value={criticalCount} icon={<Zap/>}/><Stat label="Temp" value={`${weather.temperature}°C`} icon={<AlertTriangle/>}/><Stat label="Efficiency" value={`${Math.max(61, 93 - criticalCount * 4)}%`} icon={<Activity/>}/></div>
     <Card className="col-span-4 overflow-hidden"><div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-xl font-bold">Live Prediction Cards</h3><ZoneSelect zones={model.zones} value={selectedZone} onChange={setSelectedZone}/></div>{predictionCards.map(item => <div key={item.id} className="mb-3 rounded-2xl bg-slate-900/70 p-3"><div className="flex justify-between"><b>{item.name}</b><span className={item.severity === 'Critical' ? 'text-red-300' : 'text-cyan-300'}>{item.intensity}%</span></div><p className="text-xs text-slate-400">{item.surge} · Traffic {item.traffic} · Utility {item.utility}</p><p className="mt-2 text-xs text-lime-200">Prediction Confidence: {item.confidence}%</p></div>)}</Card>
     <Card className="col-span-4"><h3 className="mb-4 text-xl font-bold">Event Intelligence Engine</h3><div className="grid gap-3"><select value={selectedCity} onChange={(e) => { setSelectedCity(e.target.value); setSelectedZone(1) }} className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white">{Object.keys(CITY_INTELLIGENCE).map(city => <option key={city}>{city}</option>)}</select><div className="rounded-xl bg-slate-950/70 p-3 text-sm text-slate-300">Weather: <b className="text-cyan-200">{weather.label}</b> · {weather.severity} severity</div><select value={selectedEvent} onChange={(e) => setSelectedEvent(e.target.value)} className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-white">{EVENTS.map(event => <option key={event}>{event}</option>)}</select><label className="text-sm text-slate-300">Crowd size: {Number(crowdSize).toLocaleString()}</label><input type="range" min="5000" max="120000" step="1000" value={crowdSize} onChange={(e) => setCrowdSize(Number(e.target.value))} /><button onClick={() => setEventPulse({ city: selectedCity, event: selectedEvent, crowdSize, at: Date.now() })} className="rounded-xl bg-cyan-400 px-4 py-3 font-black text-slate-950 shadow-glow">Simulate Event</button></div></Card>
+    <TrafficVideoPanel zone={focusedZone} />
     <Card className="col-span-8"><div className="mb-4 flex items-center justify-between"><h3 className="text-xl font-bold">Animated Activity Feed</h3><span className="text-sm text-cyan-200">Focus: {selectedCity}</span></div><div className="grid grid-cols-2 gap-3">{model.activity.map(a => <div key={a.id} className="animate-pulse rounded-2xl border border-red-400/20 bg-red-500/10 p-3"><div className="flex justify-between gap-3"><b>{a.name}</b><span className="text-xs text-slate-400">{a.timestamp}</span></div><p className="text-sm text-slate-300">{a.surge} — <span className={a.severity === 'Critical' ? 'text-red-300' : 'text-amber-200'}>{a.severity}</span></p></div>)}</div></Card>
     <Card className="col-span-6"><h3 className="mb-4 text-xl font-bold">AI Explanation Cards</h3><div className="grid gap-3">{predictionCards.map(item => <div key={item.name} className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-4"><div className="flex justify-between"><b>{item.name}</b><span className="text-lime-200">{item.confidence}% confidence</span></div><p className="mt-2 text-sm text-slate-300">{item.explanation}</p></div>)}</div></Card>
     <Card className="col-span-6"><h3 className="mb-4 text-xl font-bold">Adaptive Recommendation Engine</h3><div className="grid grid-cols-2 gap-3">{recommendationQueue.map(action => <div key={action} className="rounded-2xl border border-lime-300/20 bg-lime-300/10 p-4"><p className="text-sm uppercase tracking-[.2em] text-lime-200">Recommended Action</p><h4 className="mt-2 text-lg font-black capitalize">{action}</h4><p className="mt-1 text-xs text-slate-400">Triggered by {focusedZone.name} risk, {selectedEvent}, and live weather context.</p></div>)}</div></Card>
@@ -267,7 +302,18 @@ function CityMap({ heatmap, focusZone, center }) {
         fillColor: color,
         fillOpacity: isFocused ? 0.55 : 0.28,
         weight: isFocused ? 4 : 2,
+        className: point.intensity > 0.78 ? 'map-critical-zone' : '',
       }).addTo(map).bindPopup(`<strong>${point.name}</strong><br/>Surge intensity: ${Math.round(point.intensity * 100)}%`)
+      if (point.intensity > 0.78) {
+        L.circle([point.lat, point.lng], {
+          radius: radius + 520,
+          color: '#f87171',
+          fillColor: '#ef4444',
+          fillOpacity: 0.05,
+          weight: 2,
+          className: 'radar-pulse-zone',
+        }).addTo(map)
+      }
     })
     return () => map.remove()
   }, [heatmap, focusZone, center])
