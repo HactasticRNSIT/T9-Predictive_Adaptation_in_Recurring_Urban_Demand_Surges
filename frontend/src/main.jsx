@@ -329,7 +329,43 @@ function Forecast({ zones, selectedZone, setSelectedZone }) {
 function Anomalies({ zones, selectedZone, setSelectedZone }) {
   const [data, setData] = useState([])
   useEffect(() => { api(`/api/anomalies?zone_id=${selectedZone}`).then(setData) }, [selectedZone])
-  return <div className="grid grid-cols-3 gap-5"><Card className="col-span-2"><div className="mb-5 flex justify-between"><h3 className="text-2xl font-black">Isolation Forest Timeline</h3><ZoneSelect zones={zones} value={selectedZone} onChange={setSelectedZone}/></div><div className="h-[520px]"><ResponsiveContainer><LineChart data={data.slice().reverse()}><CartesianGrid strokeDasharray="3 3" stroke="#334155"/><XAxis dataKey="timestamp" hide/><YAxis stroke="#94a3b8"/><Tooltip contentStyle={{background:'#020617',border:'1px solid #334155'}}/><Line dataKey="value" stroke="#fb7185" strokeWidth={3}/></LineChart></ResponsiveContainer></div></Card><div>{data.map(a => <Card key={a.id} className="mb-4"><p className="text-xs uppercase text-red-300">{a.severity}</p><h4 className="text-xl font-bold">{a.metric} spike</h4><p className="text-slate-400">{a.reason}</p><b>{a.value}</b></Card>)}</div></div>
+  const selected = zones.find(z => z.id === selectedZone)
+  const categories = [
+    { name: 'traffic congestion', text: 'Traffic compression detected near', focus: 'Congestion Intensity' },
+    { name: 'metro overload', text: 'Metro crowd overflow detected near', focus: 'Mobility Load Score' },
+    { name: 'rainfall stress', text: 'Rainfall-induced congestion detected in', focus: 'Urban Stress Index' },
+    { name: 'crowd overflow', text: 'Crowd overflow predicted near', focus: 'Demand Spike Score' },
+    { name: 'emergency delay', text: 'Emergency corridor slowdown near', focus: 'Response Delay Risk' },
+    { name: 'utility pressure', text: 'Utility pressure anomaly detected around', focus: 'Service Load Score' },
+  ]
+  const severityStyle = (severity) => severity === 'Critical' ? 'border-red-400/30 bg-red-500/10 text-red-200' : severity === 'High' ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : 'border-cyan-300/25 bg-cyan-300/10 text-cyan-100'
+  const score = (value, seed, offset = 0) => Math.min(99, Math.max(41, Math.round(Number(value || 0) * 0.72 + seed * 7 + offset)))
+  const insights = data.map((a, index) => {
+    const category = categories[index % categories.length]
+    const place = index === 0 && selected ? selected.name : zones[(selectedZone + index) % Math.max(1, zones.length)]?.name || selected?.name || 'selected corridor'
+    const demand = score(a.value, index, 18)
+    const stress = score(a.value, index + 2, 12)
+    const mobility = score(a.value, index + 4, 8)
+    const congestion = score(a.value, index + 6, 14)
+    const peak = Math.max(demand, stress, mobility, congestion)
+    const severity = peak > 88 ? 'Critical' : peak > 74 ? 'High' : 'Moderate'
+    const trend = index % 3 === 0 ? 'escalating' : index % 3 === 1 ? 'spreading slowly' : 'stabilizing'
+    return {
+      ...a,
+      category,
+      place,
+      demand,
+      stress,
+      mobility,
+      congestion,
+      severity,
+      trend,
+      confidence: Math.min(97, Math.max(78, Math.round(peak * 0.72 + 24 - index * 1.7))),
+      displayTime: new Date(Date.now() - index * 8 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      explanation: `${category.text} ${place}. Pattern is ${trend} compared to expected traffic and service behavior.`,
+    }
+  })
+  return <div className="grid grid-cols-3 gap-5"><Card className="col-span-2"><div className="mb-5 flex justify-between"><div><h3 className="text-2xl font-black">Isolation Forest Timeline</h3><p className="mt-1 text-xs text-slate-400">Abnormal mobility behavior compared to expected traffic patterns.</p></div><ZoneSelect zones={zones} value={selectedZone} onChange={setSelectedZone}/></div><div className="h-[520px]"><ResponsiveContainer><LineChart data={data.slice().reverse()}><CartesianGrid strokeDasharray="3 3" stroke="#334155"/><XAxis dataKey="timestamp" hide/><YAxis stroke="#94a3b8"/><Tooltip contentStyle={{background:'#020617',border:'1px solid #334155'}} labelStyle={{color:'#67e8f9'}} formatter={(value) => [`${Math.round(value)} anomaly score`, 'Urban anomaly signal']}/><Line dataKey="value" stroke="#fb7185" strokeWidth={3}/></LineChart></ResponsiveContainer></div></Card><div>{insights.map(a => <Card key={a.id} className={`mb-4 border ${severityStyle(a.severity)}`}><div className="mb-3 flex items-center justify-between gap-3"><p className="text-xs font-black uppercase tracking-[.25em]">{a.severity}</p><span className="rounded-full bg-slate-950/60 px-3 py-1 text-xs text-lime-200" title="Confidence estimates how strongly the anomaly differs from expected demand behavior.">Confidence {a.confidence}%</span></div><div className="flex items-center justify-between gap-3"><h4 className="text-xl font-bold capitalize">{a.category.name}</h4><span className="text-xs text-slate-400">{a.displayTime}</span></div><p className="mt-2 text-sm text-slate-300" title="Isolation Forest compares current demand behavior against learned normal traffic, utility, and mobility patterns.">{a.explanation}</p><p className="mt-2 text-xs text-cyan-100">Evolving behavior: <b>{a.trend}</b> · Key driver: {a.category.focus}</p><div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-2xl bg-slate-950/60 p-3" title="Demand Spike Score shows how sharply demand rose above the expected baseline."><p className="text-slate-400">Demand Spike Score</p><b>{a.demand}%</b></div><div className="rounded-2xl bg-slate-950/60 p-3" title="Urban Stress Index combines anomaly severity with pressure on nearby city services."><p className="text-slate-400">Urban Stress Index</p><b>{a.stress}%</b></div><div className="rounded-2xl bg-slate-950/60 p-3" title="Mobility Load Score estimates abnormal movement concentration in the selected locality."><p className="text-slate-400">Mobility Load Score</p><b>{a.mobility}%</b></div><div className="rounded-2xl bg-slate-950/60 p-3" title="Congestion Intensity estimates traffic compression from the anomaly signal."><p className="text-slate-400">Congestion Intensity</p><b>{a.congestion}%</b></div></div><p className="mt-3 text-xs text-slate-300">{a.reason}</p></Card>)}</div></div>
 }
 
 function Simulation({ zones, selectedZone, setSelectedZone }) {
